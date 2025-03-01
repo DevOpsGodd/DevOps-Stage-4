@@ -1,7 +1,8 @@
-FROM node:16-alpine
+# Node.js Todos API
+FROM node:16
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
 EXPOSE 8082
-CMD ["npm", "start"]
+CMD ["node", "server.js"]

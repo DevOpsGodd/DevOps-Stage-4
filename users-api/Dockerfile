@@ -1,13 +1,12 @@
-FROM maven:3.8.6-openjdk-11-slim AS build
+# Java Spring Boot Users API
+FROM maven:3.8.6-openjdk-11 AS builder
 WORKDIR /app
 COPY pom.xml .
 COPY src ./src
 RUN mvn package -DskipTests
 
-FROM openjdk:11-jre-slim
+FROM openjdk:8-jre-slim
 WORKDIR /app
-COPY --from=build /app/target/*.jar app.jar
+COPY --from=builder /app/target/*.jar ./users-api.jar
 EXPOSE 8083
-# Make sure Java is using the correct port that matches your .env file
-ENV SERVER_PORT=8083
-CMD ["java", "-jar", "-Dserver.port=8083", "app.jar"]
+CMD ["java", "-jar", "users-api.jar"]
