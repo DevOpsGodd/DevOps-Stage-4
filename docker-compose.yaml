@@ -1,0 +1,127 @@
+version: '3.8'
+
+services:
+  traefik:
+    image: traefik:v2.6
+    command:
+      - "--api.insecure=true"  # Enable Traefik dashboard
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"  # Only HTTP for local development
+      - "--log.level=DEBUG"  # Add this for more detailed logs
+    ports:
+      - "80:80"  # Expose HTTP port
+      - "8080:8080"  # Expose dashboard
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - app-network
+    restart: always
+
+  frontend:
+    build: ./frontend
+    environment:
+      - PORT=8080
+      - HOST=0.0.0.0 
+      - AUTH_API_ADDRESS=http://auth-api:8081
+      - TODOS_API_ADDRESS=http://todos-api:8082
+      - VUE_APP_USERS_API_URL=http://users-api:8083
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`localhost`)"
+      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.services.frontend.loadbalancer.server.port=8080"
+    depends_on:
+      - auth-api
+      - todos-api
+      - users-api
+    networks:
+      - app-network
+    restart: always
+
+  auth-api:
+    build: ./auth-api
+    environment:
+      - AUTH_API_PORT=8081
+      - JWT_SECRET=${JWT_SECRET}
+      - USERS_API_ADDRESS=http://users-api:8083
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.auth-api.rule=Host(`localhost`) && PathPrefix(`/api/auth`)"
+      - "traefik.http.routers.auth-api.entrypoints=web"
+      - "traefik.http.middlewares.auth-strip-prefix.stripprefix.prefixes=/api/auth"
+      - "traefik.http.routers.auth-api.middlewares=auth-strip-prefix@docker"
+      - "traefik.http.services.auth-api.loadbalancer.server.port=8081"
+    ports: 
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - app-network
+    restart: always
+
+  todos-api:
+    build: ./todos-api
+    environment:
+      - JWT_SECRET=${JWT_SECRET}
+      - REDIS_HOST=redis
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_CHANNEL=${REDIS_CHANNEL}
+      - AUTH_API_URL=http://auth-api:8081
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.todos-api.rule=Host(`localhost`) && PathPrefix(`/api/todos`)"
+      - "traefik.http.routers.todos-api.entrypoints=web"
+      - "traefik.http.middlewares.todos-strip-prefix.stripprefix.prefixes=/api/todos"
+      - "traefik.http.routers.todos-api.middlewares=todos-strip-prefix@docker"
+      - "traefik.http.services.todos-api.loadbalancer.server.port=8082"
+    depends_on:
+      - redis
+    networks:
+      - app-network
+    restart: always
+
+  users-api:
+    build: ./users-api
+    environment:
+      - SERVER_PORT=8083
+      - JWT_SECRET=${JWT_SECRET}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.users-api.rule=Host(`localhost`) && PathPrefix(`/api/users`)"
+      - "traefik.http.routers.users-api.entrypoints=web"
+      - "traefik.http.middlewares.users-strip-prefix.stripprefix.prefixes=/api/users"
+      - "traefik.http.routers.users-api.middlewares=users-strip-prefix@docker"
+      - "traefik.http.services.users-api.loadbalancer.server.port=8083"
+    depends_on:
+      - redis
+    networks:
+      - app-network
+    restart: always
+
+  log-processor:
+    build: ./log-message-processor
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_CHANNEL=${REDIS_CHANNEL}
+    depends_on:
+      - redis
+    networks:
+      - app-network
+    restart: always
+
+  redis:
+    image: redis:6-alpine
+    networks:
+      - app-network
+    restart: always
+    volumes:
+      - redis-data:/data
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  redis-data:
